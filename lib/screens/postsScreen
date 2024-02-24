@@ -1,0 +1,152 @@
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:html/parser.dart' as htmlParser;
+import 'package:intl/intl.dart'; // Import the intl package for date formatting
+import 'post.dart'; // Import the Post class
+
+class PostsScreen extends StatefulWidget {
+  @override
+  _PostsScreenState createState() => _PostsScreenState();
+}
+
+class _PostsScreenState extends State<PostsScreen> {
+  List<Post> posts = [];
+  int postsToShow = 8; // Number of posts to display initially
+  int totalPosts = 0; // Total number of posts
+
+  @override
+  void initState() {
+    super.initState();
+    fetchPosts();
+  }
+
+  Future<void> fetchPosts() async {
+    final response = await http.get(Uri.parse(
+        'https://demo.ghost.io/ghost/api/content/posts/?key=22444f78447824223cefc48062'));
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body)['posts'];
+      setState(() {
+        posts = data.map((postJson) => Post.fromJson(postJson)).toList();
+        totalPosts = posts.length;
+      });
+    } else {
+      throw Exception('Failed to load posts');
+    }
+  }
+
+  void loadMorePosts() {
+    setState(() {
+      postsToShow += 8; // Load additional 8 posts
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    List<Post> visiblePosts = posts.take(postsToShow).toList();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Ghost Blog'),
+        centerTitle: true,
+      ),
+      body: ListView.builder(
+        itemCount: visiblePosts.length + 1, // +1 for the "Show More" button
+        itemBuilder: (context, index) {
+          if (index == visiblePosts.length) {
+            // Display "Show More" button at the end
+            return Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: ElevatedButton(
+                onPressed: loadMorePosts,
+                child: Text('Show More'),
+              ),
+            );
+          }
+
+          Post post = visiblePosts[index];
+          return Card(
+            color: Colors.white,
+            child: ListTile(
+              title: Text(post.title),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    post.plainTextContentSnippet,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Published on: ${formatDate(post.publishedAt)}',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(8.0),
+                child: Image.network(
+                  post.featureImage,
+                  width: 60,
+                  height: 60,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => PostDetailsScreen(post: post)),
+                );
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+
+// Function to format date
+String formatDate(String dateString) {
+  // Assuming dateString is in a specific format, e.g., "2022-02-24T12:34:56.789Z"
+  DateTime dateTime = DateTime.parse(dateString);
+  return DateFormat.yMMMd().format(dateTime); // Adjust the date format as needed
+}
+
+class Post {
+  final String id;
+  final String title;
+  final String publishedAt;
+  final String featureImage;
+  String htmlContent = '';
+
+  Post({
+    required this.id,
+    required this.title,
+    required this.publishedAt,
+    required this.featureImage,
+    required this.htmlContent,
+  });
+
+  // Create a named constructor to parse JSON data
+  factory Post.fromJson(Map<String, dynamic> json) {
+    return Post(
+      id: json['id'],
+      title: json['title'],
+      publishedAt: json['published_at'],
+      featureImage: json['feature_image'],
+      htmlContent: json['html'],
+    );
+  }
+
+  // Add a property to get a plain text snippet of the HTML content without tags
+  String get plainTextContentSnippet {
+    // Use the html package to parse HTML and get plain text snippet
+    final document = htmlParser.parse(htmlContent);
+    final text = document.body?.text;
+    return text?.substring(0, 100) ?? ''; // Adjust the length as needed
+  }
+}
